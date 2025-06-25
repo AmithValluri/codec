@@ -1,0 +1,106 @@
+# video_streamer.py
+from flask import Flask, render_template, request, send_from_directory, redirect, url_for
+import os
+from werkzeug.utils import secure_filename
+
+app = Flask(__name__)
+app.config['UPLOAD_FOLDER'] = 'uploads'
+app.config['ALLOWED_EXTENSIONS'] = {'mp4', 'mov', 'avi'}
+
+
+if not os.path.exists(app.config['UPLOAD_FOLDER']):
+    os.makedirs(app.config['UPLOAD_FOLDER'])
+
+def allowed_file(filename):
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in app.config['ALLOWED_EXTENSIONS']
+
+@app.route('/')
+def index():
+
+    videos = []
+    for filename in os.listdir(app.config['UPLOAD_FOLDER']):
+        if allowed_file(filename):
+            videos.append(filename)
+    return render_template('''
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Simple Video Streamer</title>
+            <style>
+                body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+                video { width: 100%; background: #000; }
+                .video-list { margin-top: 20px; }
+                .video-item { margin: 10px 0; }
+            </style>
+        </head>
+        <body>
+            <h1>Video Streamer</h1>
+            
+            <form method="POST" enctype="multipart/form-data" action="/upload">
+                <input type="file" name="video" accept="video/*">
+                <button type="submit">Upload</button>
+            </form>
+            
+            <div class="video-list">
+                <h2>Available Videos</h2>
+                {% for video in videos %}
+                <div class="video-item">
+                    <a href="/watch/{{ video }}">{{ video }}</a>
+                </div>
+                {% endfor %}
+            </div>
+        </body>
+        </html>
+    ''', videos=videos)
+
+@app.route('/upload', methods=['POST'])
+def upload():
+    if 'video' not in request.files:
+        return redirect(url_for('index'))
+    
+    file = request.files['video']
+    if file.filename == '':
+        return redirect(url_for('index'))
+    
+    if file and allowed_file(file.filename):
+        filename = secure_filename(file.filename)
+        file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+    
+    return redirect(url_for('index'))
+
+@app.route('/watch/<filename>')
+def watch(filename):
+    if not allowed_file(filename):
+        return "Invalid file type", 400
+    
+    return render_template('''
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Watching: {{ filename }}</title>
+            <style>
+                body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+                video { width: 100%; background: #000; }
+                .back-btn { margin-top: 20px; }
+            </style>
+        </head>
+        <body>
+            <h1>{{ filename }}</h1>
+            <video controls autoplay>
+                <source src="{{ url_for('stream', filename=filename) }}" type="video/mp4">
+                Your browser does not support the video tag.
+            </video>
+            <div class="back-btn">
+                <a href="/">← Back to videos</a>
+            </div>
+        </body>
+        </html>
+    ''', filename=filename)
+
+@app.route('/stream/<filename>')
+def stream(filename):
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+
+if __name__ == '__main__':
+    app.run(debug=True)
